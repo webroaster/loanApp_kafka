@@ -43,17 +43,8 @@ class LoanConsumer {
     setRoutes() {
         // 一覧取得
         this.app.get("/getAll", async (_, reply) => {
-            const query = `
-        {
-          ${process.env.TABLE_NAME}(order_by: {id: asc}) {
-            id
-            username
-            pending
-          }
-        }
-      `;
-            const { data } = await this.graphqlClient.post("", { query });
-            reply.send(data.data);
+            const data = await this.getAllUsers();
+            reply.send(data);
         });
         // DBに認証済ユーザーを保存
         this.app.post("/create", async (request, reply) => {
@@ -87,17 +78,21 @@ class LoanConsumer {
             }
         });
         // メッセージキューを取得
-        this.app.get("/getMessage", (_, reply) => {
+        this.app.get("/getMessage", async (_, reply) => {
+            const dbUsers = await this.getAllUsers();
             // usernameが被っていないユーザーのみ取得
-            const waitUsers = [];
+            const topicUsers = [];
             const existingUsernames = {};
             this.waitUsers.map((user) => {
                 if (!existingUsernames[user.username]) {
                     existingUsernames[user.username] = true;
-                    waitUsers.push(user);
+                    topicUsers.push(user);
                 }
             });
-            reply.send(waitUsers);
+            const replyUsers = topicUsers.filter((topic) => {
+                return !dbUsers.loan_review.some((db) => db.username === topic.username);
+            });
+            reply.send(replyUsers);
         });
     }
     setConsumer() {
@@ -109,6 +104,19 @@ class LoanConsumer {
         this.consumer.on("error", (err) => {
             console.error(err);
         });
+    }
+    async getAllUsers() {
+        const query = `
+        {
+          ${process.env.TABLE_NAME}(order_by: {id: asc}) {
+            id
+            username
+            pending
+          }
+        }
+      `;
+        const { data } = await this.graphqlClient.post("", { query });
+        return data.data;
     }
 }
 const loanConsumer = new LoanConsumer();
